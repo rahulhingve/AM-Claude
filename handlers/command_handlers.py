@@ -41,7 +41,7 @@ async def help_command(client: Client, message: Message):
 
 async def dl_album_command(client: Client, message: Message):
     """Handle the /dl_album command"""
-    chat_id = message.chat_id
+    chat_id = message.chat.id  # Corrected to use message.chat.id
     user_id = message.from_user.id
 
     # Check command format
@@ -77,7 +77,7 @@ async def dl_album_command(client: Client, message: Message):
 
 async def dl_select_command(client: Client, message: Message):
     """Handle the /dl_select command"""
-    chat_id = message.chat_id
+    chat_id = message.chat.id  # Corrected to use message.chat.id
     user_id = message.from_user.id
 
     # Check command format

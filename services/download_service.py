@@ -29,7 +29,7 @@ async def process_queue(client):
         await process_request(client, request)
 
 async def process_request(client, request):
-    """Process a single download request"""
+    """Process a single download request."""
     request_id = request.id
     chat_id = request.chat_id
     url = request.url
@@ -41,16 +41,16 @@ async def process_request(client, request):
             text=f"⚙️ Processing your request (ID: {request_id})...\nDownloading {'full album' if request.download_type == 'album' else 'selected tracks'}..."
         )
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        request_download_dir = os.path.join(DOWNLOAD_DIR, f"request_{request_id}_{timestamp}")
-        ensure_directory_exists(request_download_dir)
+        # Ensure the DOWNLOAD_DIR exists and use it directly.
+        ensure_directory_exists(DOWNLOAD_DIR)
         
         if request.download_type == "album":
-            await download_full_album(url, request_download_dir)
-        else:
-            await download_selected_tracks(url, request.tracks, request_download_dir)
+            await download_full_album(url, DOWNLOAD_DIR)
+        else:  # "select"
+            await download_selected_tracks(url, request.tracks, DOWNLOAD_DIR)
         
-        album_folder = await asyncio.to_thread(find_album_folder_with_m4a, request_download_dir)
+        # Search within DOWNLOAD_DIR for the album folder containing .m4a files.
+        album_folder = await asyncio.to_thread(find_album_folder_with_m4a, DOWNLOAD_DIR)
         
         await client.edit_message_text(
             chat_id=chat_id,
@@ -81,10 +81,12 @@ async def process_request(client, request):
             text=f"✅ Download complete for request {request_id}!\n\n📥 Download link: {gofile_url}\n\nPlease download your album as the link will expire soon. ⏳"
         )
         
+        # Cleanup: Delete the entire DOWNLOAD_DIR and then recreate it.
         if os.path.exists(DOWNLOAD_DIR):
             shutil.rmtree(DOWNLOAD_DIR)
             ensure_directory_exists(DOWNLOAD_DIR)
         
+        # Also remove the zip file if it still exists.
         if os.path.exists(zip_path):
             os.remove(zip_path)
         

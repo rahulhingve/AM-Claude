@@ -49,7 +49,7 @@ def register_handlers():
         filters.command("cancel")
     ))
 
-    # Message handler
+    # Message handler (for interactive track selection if needed)
     app.add_handler(MessageHandler(
         message_handlers.handle_track_selection,
         filters.private & filters.reply

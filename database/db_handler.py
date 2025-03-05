@@ -19,7 +19,7 @@ class DownloadRequest(Base):
     user_id = Column(Integer, index=True)
     url = Column(String(255))
     tracks = Column(String(255), nullable=True)
-    status = Column(String(50), default="queued")  # queued, processing, completed, failed
+    status = Column(String(50), default="queued")  # queued, processing, completed, failed, cancelled
     download_type = Column(String(20))  # album, select
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

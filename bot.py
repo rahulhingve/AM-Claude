@@ -6,7 +6,7 @@ from pyrogram.handlers import MessageHandler
 
 from config import API_ID, API_HASH, BOT_TOKEN
 from database.db_handler import init_db
-from handlers import command_handlers, message_handlers
+from handlers import command_handlers  # Removed message_handlers import
 
 # Configure logging
 logging.basicConfig(
@@ -48,12 +48,7 @@ def register_handlers():
         command_handlers.cancel_command,
         filters.command("cancel")
     ))
-
-    # Message handler (for interactive track selection if needed)
-    app.add_handler(MessageHandler(
-        message_handlers.handle_track_selection,
-        filters.private & filters.reply
-    ))
+    # Removed interactive track selection handler registration
 
 async def main():
     init_db()

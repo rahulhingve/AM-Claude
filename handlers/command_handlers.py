@@ -1,120 +1,74 @@
 import asyncio
-import os
-import shutil
-import datetime
 import re
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from database.db_handler import add_download_request, get_user_active_requests, cancel_request, get_request_by_id, update_request_status
+from config import COMMAND_TIMEOUT
+from services.download_service import process_queue
 
-from database.db_handler import (
-    add_download_request,
-    get_user_active_requests,
-    cancel_request,
-    get_request_by_id,
-    update_request_status
-)
-# Removed the unused get_album_track_listing import.
-from config import COMMAND_TIMEOUT, DOWNLOAD_DIR
-from services.gofile_service import upload_to_gofile
-from services.zip_service import zip_album_folder
-
-async def start_command(client: Client, message: Message):
-    """Handle the /start command"""
-    await message.reply(
-        "👋 Welcome to Apple Music Downloader Bot!\n\n"
-        "Available commands:\n"
-        "• /dl_album [url] - Download complete album in ALAC format\n"
-        "• /dl_select [url] [track_numbers] - Download selected tracks from an album\n"
-        "   Example: `/dl_select https://music.apple.com/in/album/tu-jaane-na/1537029617 3,5,11`\n"
-        "• /status - Check your request status\n"
-        "• /cancel [id] - Cancel a download request\n"
-        "• /help - Show this help message"
-    )
-
-async def help_command(client: Client, message: Message):
-    """Handle the /help command"""
-    await message.reply(
-        "📚 **Bot Commands**\n\n"
-        "• /dl_album [url] - Download complete album in ALAC format\n"
-        "   Example: `/dl_album https://music.apple.com/in/album/album-name/1234567890`\n\n"
-        "• /dl_select [url] [track_numbers] - Download selected tracks from an album\n"
-        "   Example: `/dl_select https://music.apple.com/in/album/tu-jaane-na/1537029617 3,5,11`\n\n"
-        "• /status - Check your current download requests\n\n"
-        "• /cancel [id] - Cancel a download request\n"
-        "   Example: `/cancel 42`\n\n"
-        "• /help - Show this help message"
-    )
-
-async def dl_album_command(client: Client, message: Message):
-    """Handle the /dl_album command"""
+async def alac_command(client: Client, message: Message):
+    """
+    Handle the /alac command.
+    Usage: /alac {url} {track_argument}
+    Use "all" for a full album download or provide a comma-separated list (e.g., "2,3,5") for selective download.
+    """
     chat_id = message.chat.id
     user_id = message.from_user.id
 
     if len(message.command) < 2:
-        await message.reply("❌ Please provide an Apple Music album URL.\nExample: `/dl_album https://music.apple.com/album/xyz/123456789`")
+        await message.reply(
+            "❌ Please provide an Apple Music album URL.\n"
+            "Example: `/alac https://music.apple.com/in/album/album-name all` or `/alac https://music.apple.com/in/album/album-name 2,3,5`"
+        )
         return
 
     url = message.command[1]
-
     if not url.startswith("https://music.apple.com/") or "album" not in url:
         await message.reply("❌ Please provide a valid Apple Music album URL.")
         return
 
+    # Default track argument is "all" if not provided.
+    track_argument = "all"
+    if len(message.command) >= 3:
+        track_argument = "".join(message.command[2:]).replace(" ", "")
+    
+    # Validate track argument format (if not "all")
+    if track_argument.lower() != "all" and not re.match(r'^[0-9,]+$', track_argument):
+        await message.reply("❌ Invalid track numbers format. Please provide numbers separated by commas (e.g., `2,3,5`) or use `all`.")
+        return
+
+    # In this merged mode, we always use the '--select' mode.
     request_id = add_download_request(
         chat_id=chat_id,
         user_id=user_id,
         url=url,
-        download_type="album"
+        download_type="select",  # merged command uses one mode
+        tracks=track_argument
     )
 
     await message.reply(
         f"✅ Your album download request has been queued!\nRequest ID: `{request_id}`\n\nPlease wait while we process your request. 🚀"
     )
 
-    from services.download_service import process_queue
     asyncio.create_task(process_queue(client))
 
-async def dl_select_command(client: Client, message: Message):
-    """Handle the /dl_select command for downloading selected tracks"""
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-
-    if len(message.command) < 3:
-        await message.reply("❌ Please provide both an Apple Music album URL and track numbers.\nExample: `/dl_select https://music.apple.com/in/album/tu-jaane-na/1537029617 3,5,11`")
-        return
-
-    url = message.command[1]
-    tracks = "".join(message.command[2:]).replace(" ", "")
-
-    if not url.startswith("https://music.apple.com/") or "album" not in url:
-        await message.reply("❌ Please provide a valid Apple Music album URL.")
-        return
-
-    if not re.match(r'^[0-9,]+$', tracks):
-        await message.reply("❌ Invalid track numbers format. Please provide numbers separated by commas. Example: `3,5,11`")
-        return
-
-    request_id = add_download_request(
-        chat_id=chat_id,
-        user_id=user_id,
-        url=url,
-        download_type="select",
-        tracks=tracks
-    )
-
+async def help_command(client: Client, message: Message):
+    """Handle the /help command."""
     await message.reply(
-        f"✅ Your track selection request has been queued!\nSelected tracks: {tracks}\nRequest ID: `{request_id}`\n\nPlease wait while we process your request. 🚀"
+        "📚 **Bot Commands**\n\n"
+        "• /alac [url] [track_numbers] - Download album in ALAC format.\n"
+        "   Use `all` for a full album download or provide specific track numbers separated by commas.\n"
+        "   Examples:\n"
+        "      `/alac https://music.apple.com/in/album/tu-jaane-na/1537029617 all`\n"
+        "      `/alac https://music.apple.com/in/album/tu-jaane-na/1537029617 2,3,5`\n\n"
+        "• /status - Check your current download requests.\n"
+        "• /cancel [id] - Cancel a download request. Example: `/cancel 42`"
     )
-
-    from services.download_service import process_queue
-    asyncio.create_task(process_queue(client))
 
 async def status_command(client: Client, message: Message):
-    """Handle the /status command"""
+    """Handle the /status command."""
     user_id = message.from_user.id
-    from database.db_handler import get_user_active_requests
     requests = get_user_active_requests(user_id)
-
     if not requests:
         await message.reply("ℹ️ You don't have any active download requests.")
         return
@@ -128,11 +82,10 @@ async def status_command(client: Client, message: Message):
             "failed": "❌",
             "cancelled": "🚫"
         }.get(req.status, "❓")
-
         status_text += (
             f"**ID:** `{req.id}`\n"
             f"**Status:** {status_emoji} {req.status.title()}\n"
-            f"**Type:** {'Full Album' if req.download_type == 'album' else 'Selected Tracks'}\n"
+            f"**Type:** {'Full Album' if req.tracks.lower()=='all' else 'Selected Tracks'}\n"
             f"**Requested:** {req.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
         )
         if req.gofile_url:
@@ -144,7 +97,7 @@ async def status_command(client: Client, message: Message):
     await message.reply(status_text)
 
 async def cancel_command(client: Client, message: Message):
-    """Handle the /cancel command"""
+    """Handle the /cancel command."""
     user_id = message.from_user.id
     if len(message.command) < 2:
         await message.reply("❌ Please provide a request ID to cancel.\nExample: `/cancel 42`")
@@ -156,7 +109,6 @@ async def cancel_command(client: Client, message: Message):
         await message.reply("❌ Invalid request ID. Please provide a valid number.")
         return
 
-    from database.db_handler import get_request_by_id, cancel_request
     request = get_request_by_id(request_id)
     if not request:
         await message.reply(f"❌ Request with ID {request_id} not found.")

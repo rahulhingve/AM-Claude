@@ -4,11 +4,7 @@ import shutil
 from datetime import datetime
 
 from config import DOWNLOAD_DIR, MAX_CONCURRENT_DOWNLOADS
-from database.db_handler import (
-    get_requests_in_queue,
-    update_request_status,
-    get_active_processing_count
-)
+from database.db_handler import get_requests_in_queue, update_request_status, get_active_processing_count
 from services.zip_service import zip_album_folder
 from services.gofile_service import upload_to_gofile
 from utils.helpers import ensure_directory_exists, find_album_folder_with_m4a
@@ -20,13 +16,11 @@ async def process_queue(client):
     """Continuously process queued requests sequentially."""
     while True:
         async with queue_lock:
-            # If a download is already processing, or no queued requests exist, exit.
             if get_active_processing_count() >= MAX_CONCURRENT_DOWNLOADS:
                 return
             queued_requests = get_requests_in_queue()
             if not queued_requests:
                 return
-            # Process the oldest queued request.
             request = queued_requests[0]
         await process_request(client, request)
 
@@ -40,16 +34,16 @@ async def process_request(client, request):
         update_request_status(request_id, "processing")
         status_msg = await client.send_message(
             chat_id=chat_id,
-            text=f"⚙️ Processing your request (ID: {request_id})...\nDownloading {'full album' if request.download_type == 'album' else 'selected tracks'}..."
+            text=f"⚙️ Processing your request (ID: {request_id})...\nDownloading album..."
         )
         
-        # Ensure the DOWNLOAD_DIR exists and use it directly.
+        # Ensure the DOWNLOAD_DIR exists.
         ensure_directory_exists(DOWNLOAD_DIR)
         
-        if request.download_type == "album":
-            await download_full_album(url, DOWNLOAD_DIR)
-        else:
-            await download_selected_tracks(url, request.tracks, DOWNLOAD_DIR)
+        # Always use the "--select" mode; pass track argument via stdin.
+        # If no specific tracks were given, default to "all".
+        track_arg = request.tracks if request.tracks is not None else "all"
+        await download_album(url, track_arg, DOWNLOAD_DIR)
         
         # Find the album folder within DOWNLOAD_DIR that contains .m4a files.
         album_folder = await asyncio.to_thread(find_album_folder_with_m4a, DOWNLOAD_DIR)
@@ -106,25 +100,11 @@ async def process_request(client, request):
     finally:
         await process_queue(client)
 
-async def download_full_album(url, download_dir):
-    """Download a full album using the external Go downloader."""
-    cmd = ['go', 'run', 'main.go', url]
-    env = os.environ.copy()
-    env['AM_DL_DIR'] = download_dir
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd='apple-music-alac-atmos-downloader',
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        raise Exception(f"Download failed: {stderr.decode()}")
-    return True
-
-async def download_selected_tracks(url, tracks, download_dir):
-    """Download selected tracks from an album using the external Go downloader with --select flag."""
+async def download_album(url, track_argument, download_dir):
+    """
+    Download an album using the external Go downloader in '--select' mode.
+    The track_argument (e.g. "all" or "2,3,5") is sent via stdin.
+    """
     cmd = ['go', 'run', 'main.go', '--select', url]
     env = os.environ.copy()
     env['AM_DL_DIR'] = download_dir
@@ -136,8 +116,8 @@ async def download_selected_tracks(url, tracks, download_dir):
         stderr=asyncio.subprocess.PIPE,
         env=env
     )
-    tracks_input = f"{tracks}\n".encode()
-    stdout, stderr = await process.communicate(input=tracks_input)
+    input_str = f"{track_argument}\n".encode()
+    stdout, stderr = await process.communicate(input=input_str)
     if process.returncode != 0:
         raise Exception(f"Download failed: {stderr.decode()}")
     return True

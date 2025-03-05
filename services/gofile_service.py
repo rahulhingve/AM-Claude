@@ -15,7 +15,6 @@ async def upload_to_gofile(file_path):
     if process.returncode != 0:
         raise Exception(f"GoFile upload failed: {stderr_text if stderr_text else stdout_text}")
     
-    # Attempt to extract the download URL from the output.
     download_url_match = re.search(r"Download\s*page:\s*(https://gofile\.io/\S+)", stdout_text)
     if download_url_match:
         return download_url_match.group(1)

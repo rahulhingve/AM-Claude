@@ -11,7 +11,6 @@ async def zip_album_folder(album_folder):
     zip_file_base = os.path.join(temp_dir, f"{album_name}")
     zip_file_path = f"{zip_file_base}.zip"
     
-    # Remove any existing zip file.
     if os.path.exists(zip_file_path):
         os.remove(zip_file_path)
     

@@ -6,9 +6,8 @@ from pyrogram.handlers import MessageHandler
 
 from config import API_ID, API_HASH, BOT_TOKEN
 from database.db_handler import init_db
-from handlers import command_handlers  # Removed message_handlers import
+from handlers import command_handlers
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -23,32 +22,11 @@ app = Client(
 )
 
 def register_handlers():
-    # Command handlers
-    app.add_handler(MessageHandler(
-        command_handlers.start_command,
-        filters.command("start")
-    ))
-    app.add_handler(MessageHandler(
-        command_handlers.help_command,
-        filters.command("help")
-    ))
-    app.add_handler(MessageHandler(
-        command_handlers.dl_album_command,
-        filters.command("dl_album")
-    ))
-    app.add_handler(MessageHandler(
-        command_handlers.dl_select_command,
-        filters.command("dl_select")
-    ))
-    app.add_handler(MessageHandler(
-        command_handlers.status_command,
-        filters.command("status")
-    ))
-    app.add_handler(MessageHandler(
-        command_handlers.cancel_command,
-        filters.command("cancel")
-    ))
-    # Removed interactive track selection handler registration
+    # Register the merged /alac command along with /help, /status, and /cancel.
+    app.add_handler(MessageHandler(command_handlers.alac_command, filters.command("alac")))
+    app.add_handler(MessageHandler(command_handlers.help_command, filters.command("help")))
+    app.add_handler(MessageHandler(command_handlers.status_command, filters.command("status")))
+    app.add_handler(MessageHandler(command_handlers.cancel_command, filters.command("cancel")))
 
 async def main():
     init_db()

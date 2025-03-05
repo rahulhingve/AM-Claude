@@ -10,6 +10,7 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 class DownloadRequest(Base):
     __tablename__ = "download_requests"
 
@@ -28,6 +29,7 @@ class DownloadRequest(Base):
     is_active = Column(Boolean, default=True)
     message_id = Column(Integer, nullable=True)
 
+
 @contextmanager
 def get_db():
     db = SessionLocal()
@@ -36,8 +38,10 @@ def get_db():
     finally:
         db.close()
 
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+
 
 def add_download_request(chat_id, user_id, url, download_type, tracks=None, message_id=None):
     with get_db() as db:
@@ -54,9 +58,11 @@ def add_download_request(chat_id, user_id, url, download_type, tracks=None, mess
         db.refresh(download_request)
         return download_request.id
 
+
 def get_request_by_id(request_id):
     with get_db() as db:
         return db.query(DownloadRequest).filter(DownloadRequest.id == request_id).first()
+
 
 def update_request_status(request_id, status, **kwargs):
     with get_db() as db:
@@ -70,6 +76,7 @@ def update_request_status(request_id, status, **kwargs):
             return True
         return False
 
+
 def get_requests_in_queue():
     with get_db() as db:
         return db.query(DownloadRequest).filter(
@@ -77,12 +84,14 @@ def get_requests_in_queue():
             DownloadRequest.is_active == True
         ).order_by(DownloadRequest.created_at).all()
 
+
 def get_active_processing_count():
     with get_db() as db:
         return db.query(DownloadRequest).filter(
             DownloadRequest.status == "processing",
             DownloadRequest.is_active == True
         ).count()
+
 
 def cancel_request(request_id):
     with get_db() as db:
@@ -94,12 +103,14 @@ def cancel_request(request_id):
             return True
         return False
 
+
 def get_user_active_requests(user_id):
     with get_db() as db:
         return db.query(DownloadRequest).filter(
             DownloadRequest.user_id == user_id,
             DownloadRequest.is_active == True
         ).all()
+
 
 def set_message_id(request_id, message_id):
     with get_db() as db:

@@ -13,20 +13,20 @@ from services.zip_service import zip_album_folder
 from services.gofile_service import upload_to_gofile
 from utils.helpers import ensure_directory_exists, find_album_folder_with_m4a
 
-# Lock for queue processing to ensure only one loop runs at a time.
+# Lock to ensure only one queue loop runs at a time.
 queue_lock = asyncio.Lock()
 
 async def process_queue(client):
     """Continuously process queued requests sequentially."""
     while True:
         async with queue_lock:
-            # If another download is processing, exit the loop.
+            # If a download is already processing, or no queued requests exist, exit.
             if get_active_processing_count() >= MAX_CONCURRENT_DOWNLOADS:
                 return
             queued_requests = get_requests_in_queue()
             if not queued_requests:
                 return
-            # Always process the oldest queued request.
+            # Process the oldest queued request.
             request = queued_requests[0]
         await process_request(client, request)
 
@@ -43,7 +43,7 @@ async def process_request(client, request):
             text=f"⚙️ Processing your request (ID: {request_id})...\nDownloading {'full album' if request.download_type == 'album' else 'selected tracks'}..."
         )
         
-        # Use the main DOWNLOAD_DIR directly.
+        # Ensure the DOWNLOAD_DIR exists and use it directly.
         ensure_directory_exists(DOWNLOAD_DIR)
         
         if request.download_type == "album":
@@ -51,7 +51,7 @@ async def process_request(client, request):
         else:
             await download_selected_tracks(url, request.tracks, DOWNLOAD_DIR)
         
-        # Search the DOWNLOAD_DIR for the album folder containing .m4a files.
+        # Find the album folder within DOWNLOAD_DIR that contains .m4a files.
         album_folder = await asyncio.to_thread(find_album_folder_with_m4a, DOWNLOAD_DIR)
         
         await client.edit_message_text(
@@ -83,12 +83,12 @@ async def process_request(client, request):
             text=f"✅ Download complete for request {request_id}!\n\n📥 Download link: {gofile_url}\n\nPlease download your album as the link will expire soon. ⏳"
         )
         
-        # Cleanup: Delete the entire DOWNLOAD_DIR and then recreate it.
+        # Cleanup: Delete the entire DOWNLOAD_DIR and recreate it.
         if os.path.exists(DOWNLOAD_DIR):
             shutil.rmtree(DOWNLOAD_DIR)
             ensure_directory_exists(DOWNLOAD_DIR)
         
-        # Also remove the temporary zip file if it exists.
+        # Remove the temporary zip file.
         if os.path.exists(zip_path):
             os.remove(zip_path)
         

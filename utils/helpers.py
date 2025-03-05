@@ -1,5 +1,4 @@
 import os
-import glob
 
 def ensure_directory_exists(directory):
     """Ensure that a directory exists, creating it if necessary."""
@@ -15,14 +14,3 @@ def find_album_folder_with_m4a(base_path):
             if file.lower().endswith('.m4a'):
                 return root
     raise Exception(f"No folder containing .m4a files found in {base_path}")
-
-def get_latest_created_folder(base_path):
-    """Get the most recently created folder in a given path."""
-    folders = [
-        os.path.join(base_path, d)
-        for d in os.listdir(base_path)
-        if os.path.isdir(os.path.join(base_path, d))
-    ]
-    if not folders:
-        return None
-    return max(folders, key=os.path.getctime)

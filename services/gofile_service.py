@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 import re
 
 async def upload_to_gofile(file_path):
@@ -10,11 +9,15 @@ async def upload_to_gofile(file_path):
         stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await process.communicate()
+    stdout_text = stdout.decode().strip()
+    stderr_text = stderr.decode().strip()
+    
     if process.returncode != 0:
-        raise Exception(f"GoFile upload failed: {stderr.decode()}")
-    output = stdout.decode()
-    download_url_match = re.search(r"Download page: (https://gofile\.io/\S+)", output)
+        raise Exception(f"GoFile upload failed: {stderr_text if stderr_text else stdout_text}")
+    
+    # Attempt to extract the download URL from the output.
+    download_url_match = re.search(r"Download\s*page:\s*(https://gofile\.io/\S+)", stdout_text)
     if download_url_match:
         return download_url_match.group(1)
     else:
-        raise Exception("Failed to extract GoFile download URL from output")
+        raise Exception("Failed to extract GoFile download URL from output: " + stdout_text)

@@ -1,0 +1,13 @@
+# Telegram Bot Framework
+pyrogram==2.0.106
+tgcrypto==1.2.5
+
+# Async Support
+asyncio==3.4.3
+
+# Database
+sqlalchemy==2.0.19
+python-dotenv==1.0.0
+
+# Optional: Request handling and utilities
+requests==2.31.0

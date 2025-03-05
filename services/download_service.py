@@ -13,7 +13,7 @@ from services.zip_service import zip_album_folder
 from services.gofile_service import upload_to_gofile
 from utils.helpers import ensure_directory_exists, find_album_folder_with_m4a
 
-# Lock for queue processing to ensure only one queue loop runs at a time.
+# Lock for queue processing to ensure only one loop runs at a time.
 queue_lock = asyncio.Lock()
 
 async def process_queue(client):
@@ -51,7 +51,7 @@ async def process_request(client, request):
         else:
             await download_selected_tracks(url, request.tracks, DOWNLOAD_DIR)
         
-        # Search the DOWNLOAD_DIR for the folder containing .m4a files.
+        # Search the DOWNLOAD_DIR for the album folder containing .m4a files.
         album_folder = await asyncio.to_thread(find_album_folder_with_m4a, DOWNLOAD_DIR)
         
         await client.edit_message_text(
@@ -103,3 +103,41 @@ async def process_request(client, request):
             )
         except Exception:
             pass
+    finally:
+        await process_queue(client)
+
+async def download_full_album(url, download_dir):
+    """Download a full album using the external Go downloader."""
+    cmd = ['go', 'run', 'main.go', url]
+    env = os.environ.copy()
+    env['AM_DL_DIR'] = download_dir
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd='apple-music-alac-atmos-downloader',
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        raise Exception(f"Download failed: {stderr.decode()}")
+    return True
+
+async def download_selected_tracks(url, tracks, download_dir):
+    """Download selected tracks from an album using the external Go downloader with --select flag."""
+    cmd = ['go', 'run', 'main.go', '--select', url]
+    env = os.environ.copy()
+    env['AM_DL_DIR'] = download_dir
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd='apple-music-alac-atmos-downloader',
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env
+    )
+    tracks_input = f"{tracks}\n".encode()
+    stdout, stderr = await process.communicate(input=tracks_input)
+    if process.returncode != 0:
+        raise Exception(f"Download failed: {stderr.decode()}")
+    return True

@@ -7,7 +7,7 @@ def ensure_directory_exists(directory):
 
 async def find_latest_album_folder(download_dir):
     """Find the most recently created album folder in the download directory"""
-    # First check if the download directory exists
+    # Check if directory exists
     if not os.path.exists(download_dir):
         raise Exception(f"Download directory {download_dir} does not exist")
     
@@ -21,10 +21,10 @@ async def find_latest_album_folder(download_dir):
     if not artist_folders:
         raise Exception(f"No artist folders found in {download_dir}")
     
-    # Find the most recently created artist folder
+    # Find latest artist folder
     latest_artist_folder = max(artist_folders, key=os.path.getctime)
     
-    # Find album folders within the artist folder
+    # Find album folders within
     album_folders = [
         os.path.join(latest_artist_folder, album) 
         for album in os.listdir(latest_artist_folder) 
@@ -34,7 +34,7 @@ async def find_latest_album_folder(download_dir):
     if not album_folders:
         raise Exception(f"No album folders found in {latest_artist_folder}")
     
-    # Return the most recently created album folder
+    # Return latest album folder
     return max(album_folders, key=os.path.getctime)
 
 def get_latest_created_folder(base_path):

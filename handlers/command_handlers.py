@@ -1,65 +1,61 @@
 import asyncio
+import re
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message
 
 from database.db_handler import (
     add_download_request,
     get_user_active_requests,
     cancel_request,
-    get_request_by_id
+    get_request_by_id,
+    update_request_status
 )
+from config import COMMAND_TIMEOUT, DOWNLOAD_DIR
 from services.download_service import process_queue
-from config import COMMAND_TIMEOUT
 
-# Store waiting users for track selection
-waiting_for_tracks = {}
-
-@filters.command("start")
 async def start_command(client: Client, message: Message):
     """Handle the /start command"""
     await message.reply(
         "👋 Welcome to Apple Music Downloader Bot!\n\n"
         "Available commands:\n"
-        "• /dl_album [url] - Download complete album in ALAC format\n"
-        "• /dl_select [url] - Download selected tracks from an album\n"
-        "• /status - Check your request status\n"
-        "• /cancel [id] - Cancel a download request\n"
-        "• /help - Show this help message"
+        "• `/dl_album [url]` - Download an entire album\n"
+        "• `/dl_select [url] [tracks]` - Download specific tracks (e.g., 3,5,11)\n"
+        "• `/status` - Check your request status\n"
+        "• `/cancel [id]` - Cancel a request\n"
+        "• `/help` - Show this help message"
     )
 
-@filters.command("help")
 async def help_command(client: Client, message: Message):
     """Handle the /help command"""
     await message.reply(
         "📚 **Bot Commands**\n\n"
-        "• /dl_album [url] - Download complete album in ALAC format\n"
-        "Example: `/dl_album https://music.apple.com/in/album/album-name/1234567890`\n\n"
-        "• /dl_select [url] - Download selected tracks from an album\n"
-        "Example: `/dl_select https://music.apple.com/in/album/album-name/1234567890`\n\n"
-        "• /status - Check your current download requests\n\n"
-        "• /cancel [id] - Cancel a download request\n"
-        "Example: `/cancel 42`\n\n"
-        "• /help - Show this help message"
+        "• `/dl_album [url]` - Download an entire album\n"
+        "  Example: `/dl_album https://music.apple.com/in/album/xyz/1234567890`\n\n"
+        "• `/dl_select [url] [tracks]` - Download specific tracks\n"
+        "  Example: `/dl_select https://music.apple.com/in/album/xyz/1234567890 3,5,11`\n\n"
+        "• `/status` - Check your active requests\n\n"
+        "• `/cancel [id]` - Cancel a request\n"
+        "  Example: `/cancel 42`\n\n"
+        "• `/help` - Show this help message"
     )
 
-@filters.command("dl_album")
 async def dl_album_command(client: Client, message: Message):
     """Handle the /dl_album command"""
-    chat_id = message.chat.id
+    chat_id = message.chat_id
     user_id = message.from_user.id
-    
+
     # Check command format
     if len(message.command) < 2:
-        await message.reply("Please provide an Apple Music album URL.\nExample: `/dl_album https://music.apple.com/album/xyz/123456789`")
+        await message.reply("⚠️ Please provide an Apple Music album URL.\nExample: `/dl_album https://music.apple.com/in/album/xyz/123456789`")
         return
-    
+
     url = message.command[1]
-    
-    # Validate URL (basic check)
+
+    # Validate URL
     if not url.startswith("https://music.apple.com/") or "album" not in url:
-        await message.reply("Please provide a valid Apple Music album URL.")
+        await message.reply("❌ Invalid URL. Please provide a valid Apple Music album URL.")
         return
-    
+
     # Add request to database
     request_id = add_download_request(
         chat_id=chat_id,
@@ -67,122 +63,77 @@ async def dl_album_command(client: Client, message: Message):
         url=url,
         download_type="album"
     )
-    
+
     # Inform user
     await message.reply(
         f"✅ Your album download request has been queued!\n"
-        f"Request ID: `{request_id}`\n\n"
-        f"You will be notified when your download is ready."
+        f"Request ID: `{request_id}`\n"
+        f"🎵 We'll download the full album for you.\n\n"
+        f"You'll get a link when it's ready!"
     )
-    
+
     # Trigger queue processing
     asyncio.create_task(process_queue(client))
 
-@filters.command("dl_select")
 async def dl_select_command(client: Client, message: Message):
-    """Handle the /dl_select command for downloading selected tracks"""
-    chat_id = message.chat.id
+    """Handle the /dl_select command"""
+    chat_id = message.chat_id
     user_id = message.from_user.id
-    
+
     # Check command format
-    if len(message.command) < 2:
-        await message.reply("Please provide an Apple Music album URL.\nExample: `/dl_select https://music.apple.com/album/xyz/123456789`")
+    if len(message.command) != 3:
+        await message.reply("⚠️ Please provide an Apple Music album URL and track numbers.\nExample: `/dl_select https://music.apple.com/in/album/xyz/123456789 3,5,11`")
         return
-    
+
     url = message.command[1]
-    
-    # Validate URL (basic check)
+    tracks = message.command[2]
+
+    # Validate URL
     if not url.startswith("https://music.apple.com/") or "album" not in url:
-        await message.reply("Please provide a valid Apple Music album URL.")
+        await message.reply("❌ Invalid URL. Please provide a valid Apple Music album URL.")
         return
-    
-    # Check if user already has a track selection request pending
-    if user_id in waiting_for_tracks:
-        await message.reply("You already have a pending track selection. Please complete that first or wait for it to time out.")
+
+    # Validate tracks format
+    if not re.match(r'^[0-9,\s]+$', tracks):
+        await message.reply("❌ Invalid track numbers. Use numbers separated by commas, e.g., `3,5,11`.")
         return
-    
-    # Start the track listing process
-    status_message = await message.reply("🔍 Fetching album tracks... Please wait.")
-    
-    # Store user information and start timeout
-    waiting_for_tracks[user_id] = {
-        "url": url,
-        "chat_id": chat_id,
-        "message_id": status_message.id,
-        "original_message_id": message.id
-    }
-    
-    # Start the track selection process
-    asyncio.create_task(get_track_listing(client, url, chat_id, user_id, status_message.id))
 
-async def get_track_listing(client, url, chat_id, user_id, message_id):
-    """Get track listing from the URL and ask user to select tracks"""
-    from services.download_service import get_album_track_listing
-    
-    try:
-        # Get album tracks
-        album_info = await get_album_track_listing(url)
-        
-        # Format track listing message
-        tracks_text = "📋 **Track Listing**\n\n"
-        tracks_text += f"**Album:** {album_info['album_title']}\n"
-        tracks_text += f"**Artist:** {album_info['artist']}\n\n"
-        
-        for idx, track in enumerate(album_info['tracks']):
-            tracks_text += f"`{idx+1}`. {track}\n"
-        
-        tracks_text += "\n⚠️ **Reply to this message with track numbers separated by commas**\n"
-        tracks_text += "Example: `1,3,5` to download tracks 1, 3, and 5\n"
-        tracks_text += f"You have {COMMAND_TIMEOUT} seconds to respond."
-        
-        # Update the message with track listing
-        await client.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=tracks_text
-        )
-        
-        # Start timeout task
-        asyncio.create_task(handle_track_selection_timeout(client, user_id, chat_id, message_id))
-        
-    except Exception as e:
-        # Handle error
-        await client.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"❌ Error fetching album tracks: {str(e)}"
-        )
-        # Clean up
-        if user_id in waiting_for_tracks:
-            del waiting_for_tracks[user_id]
+    # Clean up tracks
+    tracks = ','.join([t.strip() for t in tracks.split(',') if t.strip()])
 
-async def handle_track_selection_timeout(client, user_id, chat_id, message_id):
-    """Handle timeout for track selection"""
-    await asyncio.sleep(COMMAND_TIMEOUT)
-    
-    # Check if user still hasn't responded
-    if user_id in waiting_for_tracks:
-        await client.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="⏱️ Track selection timed out. Please try again with `/dl_select` command."
-        )
-        del waiting_for_tracks[user_id]
+    # Add request to database
+    request_id = add_download_request(
+        chat_id=chat_id,
+        user_id=user_id,
+        url=url,
+        download_type="select",
+        tracks=tracks
+    )
 
-@filters.command("status")
+    # Inform user
+    await message.reply(
+        f"✅ Your track download request has been queued!\n"
+        f"Request ID: `{request_id}`\n"
+        f"🎵 Tracks: {tracks}\n\n"
+        f"You'll get a link when it's ready!"
+    )
+
+    # Trigger queue processing
+    asyncio.create_task(process_queue(client))
+
 async def status_command(client: Client, message: Message):
     """Handle the /status command"""
     user_id = message.from_user.id
-    
+
     # Get user's active requests
     requests = get_user_active_requests(user_id)
-    
+
     if not requests:
-        await message.reply("You don't have any active download requests.")
+        await message.reply("ℹ️ You have no active download requests.")
         return
-    
+
     status_text = "📊 **Your Download Requests**\n\n"
-    
+
     for req in requests:
         status_emoji = {
             "queued": "🔄",
@@ -191,61 +142,60 @@ async def status_command(client: Client, message: Message):
             "failed": "❌",
             "cancelled": "🚫"
         }.get(req.status, "❓")
-        
+
         status_text += (
             f"**ID:** `{req.id}`\n"
             f"**Status:** {status_emoji} {req.status.title()}\n"
             f"**Type:** {'Full Album' if req.download_type == 'album' else 'Selected Tracks'}\n"
             f"**Requested:** {req.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
         )
-        
+
         if req.gofile_url:
-            status_text += f"**Download Link:** {req.gofile_url}\n"
-        
+            status_text += f"**Link:** {req.gofile_url}\n"
+
         if req.error_message:
             status_text += f"**Error:** {req.error_message}\n"
-        
+
         status_text += "\n" + "─" * 30 + "\n\n"
-    
-    status_text += "To cancel a request, use `/cancel [id]`"
-    
+
+    status_text += "💡 Use `/cancel [id]` to cancel a request."
+
     await message.reply(status_text)
 
-@filters.command("cancel")
 async def cancel_command(client: Client, message: Message):
     """Handle the /cancel command"""
     user_id = message.from_user.id
-    
+
     # Check command format
     if len(message.command) < 2:
-        await message.reply("Please provide a request ID to cancel.\nExample: `/cancel 42`")
+        await message.reply("⚠️ Please provide a request ID.\nExample: `/cancel 42`")
         return
-    
+
     try:
         request_id = int(message.command[1])
     except ValueError:
-        await message.reply("Invalid request ID. Please provide a valid number.")
+        await message.reply("❌ Invalid ID. Please provide a number.")
         return
-    
+
     # Get request info
     request = get_request_by_id(request_id)
-    
+
     if not request:
-        await message.reply(f"Request with ID {request_id} not found.")
+        await message.reply(f"❌ Request ID `{request_id}` not found.")
         return
-    
-    # Check if user owns this request
+
+    # Check ownership
     if request.user_id != user_id:
-        await message.reply("You can only cancel your own requests.")
+        await message.reply("🚫 You can only cancel your own requests.")
         return
-    
-    # Check if request can be cancelled
+
+    # Check status
     if request.status not in ["queued", "processing"]:
-        await message.reply(f"Request with status '{request.status}' cannot be cancelled.")
+        await message.reply(f"🚫 Request with status '{request.status}' cannot be cancelled.")
         return
-    
-    # Cancel the request
+
+    # Cancel request
     if cancel_request(request_id):
-        await message.reply(f"✅ Request with ID {request_id} has been cancelled.")
+        await message.reply(f"✅ Request ID `{request_id}` cancelled successfully!")
     else:
-        await message.reply(f"❌ Failed to cancel request with ID {request_id}.")
+        await message.reply(f"❌ Failed to cancel request ID `{request_id}`.")
